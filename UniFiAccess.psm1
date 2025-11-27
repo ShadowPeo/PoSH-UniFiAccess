@@ -134,31 +134,31 @@ function Invoke-UniFiAccessRequest {
         if ($response.code -and $response.code -eq 'SUCCESS') {
         
             $response = [PSCustomObject]@{
-            api_status = "SUCCESS"
-#            api_result = 'SUCCESS'
-            api_returnCode = if ($response.code) { $response.code } else { 'SUCCESS' }
-            api_returnData = if ($response.data) { $response.data } else { $null }
-            api_returnMessage = if ($response.message) { $response.message } else { $null }
+            status = "SUCCESS"
+#            result = 'SUCCESS'
+            code = if ($response.code) { $response.code } else { 'SUCCESS' }
+            data = if ($response.data) { $response.data } else { $null }
+            message = if ($response.message) { $response.message } else { $null }
         }  
         }
         elseif ($response.code -and $response.code -ne 'SUCCESS') {
             $response = [PSCustomObject]@{
-                api_status = 'SUCCESS'
- #               api_result = 'ERROR'
-                api_returnCode = $response.code
-                api_returnData = ""
-                api_returnMessage = if ($errorMessage.ContainsKey($response.code)) { $errorMessage[$response.code] } else { $response.msg }
+                status = 'SUCCESS'
+ #               result = 'ERROR'
+                code = $response.code
+                data = ""
+                message = if ($errorMessage.ContainsKey($response.code)) { $errorMessage[$response.code] } else { $response.msg }
             }
         }
         
     }
     catch {
         $response = [PSCustomObject]@{
-            api_status = 'ERROR'
- #           api_result = $null
-            api_returnCode = $null
-            api_returnData = $null
-            api_returnMessage = $null
+            status = 'ERROR'
+ #           result = $null
+            code = $null
+            data = $null
+            message = $null
         }
     }
 
@@ -597,16 +597,52 @@ function Remove-UniFiAccessUser {
         [Alias('Id')]
         [string]$UserId,
         
+#        [Parameter()]
+#        [switch]$Confirm,        
+        
         [Parameter()]
-        [switch]$Force
+        [switch]$deactivate
     )
     
-    process {
-        if ($Force -or $PSCmdlet.ShouldProcess($UserId, 'Delete user')) {
-            $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId"
+ 
+
+ 
+    $unifiUser = $null
+    $unifiUser = Get-UniFiAccessUser -UserId $UserId
+    if ($unifiUser.code -ne 'SUCCESS') {
+        return $unifiUser
+    }
+    else {
+        
+        if ($unifiUser.data.status -ne 'DEACTIVATED' -and -not $deactivate) 
+        {
+            $response = [PSCustomObject]@{
+                status = 'ERROR'
+#                result = $null
+                code = 'CODE_USER_ACCOUNT_NOT_DEACTIVATED'
+                data = $null
+                message = "User is still active. Please deactivate the user before deletion."
+            }
             return $response
         }
+        elseif ($deactivate) 
+        {
+            $deactivateResponse = Set-UniFiAccessUser -UserId $UserId -Status 'DEACTIVATED'
+            if ($deactivateResponse.code -ne 'SUCCESS') 
+            {
+                Write-Error "Failed to deactivate user before deletion: $($deactivateResponse.message)"
+                return $deactivateResponse
+            }
+        }
+        
+        if ( ($ConfirmPreference -eq 'High' -and$PSCmdlet.ShouldProcess($UserId, 'Delete user')) -or
+             ($ConfirmPreference -ne 'High' ) )
+        {
+            $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId"
+        }
     }
+
+    return $response
 }
 
 <#
@@ -909,28 +945,6 @@ function Get-UniFiAccessUserGroupMembers {
 }
 
 #endregion
-
-# Export module members
-Export-ModuleMember -Function @(
-    'Connect-UniFiAccess',
-    'Disconnect-UniFiAccess',
-    'Get-UniFiAccessConnection',
-    'New-UniFiAccessUser',
-    'Get-UniFiAccessUser',
-    'Get-UniFiAccessUsers',
-    'Set-UniFiAccessUser',
-    'Remove-UniFiAccessUser',
-    'Search-UniFiAccessUser',
-    'Set-UniFiAccessUserProfilePicture',
-    'New-UniFiAccessUserGroup',
-    'Get-UniFiAccessUserGroup',
-    'Get-UniFiAccessUserGroups',
-    'Set-UniFiAccessUserGroup',
-    'Remove-UniFiAccessUserGroup',
-    'Add-UniFiAccessUserToGroup',
-    'Remove-UniFiAccessUserFromGroup',
-    'Get-UniFiAccessUserGroupMembers'
-)
 #region Visitor Management
 
 <#
@@ -2744,6 +2758,7 @@ function Get-UniFiAccessDoorGroupTopology {
 
 <#
 .SYNOPSIS
+
     Creates a new door group.
     
 .PARAMETER Name
@@ -3295,3 +3310,106 @@ function Get-UniFiAccessWebhookEvents {
 }
 
 #endregion
+
+# Export module members
+Export-ModuleMember -Function @(
+    'Connect-UniFiAccess',
+    'Disconnect-UniFiAccess',
+    'Get-UniFiAccessConnection',
+    'New-UniFiAccessUser',
+    'Get-UniFiAccessUser',
+    'Get-UniFiAccessUsers',
+    'Set-UniFiAccessUser',
+    'Remove-UniFiAccessUser',
+    'Search-UniFiAccessUser',
+    'Set-UniFiAccessUserProfilePicture',
+    'New-UniFiAccessUserGroup',
+    'Get-UniFiAccessUserGroup',
+    'Get-UniFiAccessUserGroups',
+    'Set-UniFiAccessUserGroup',
+    'Remove-UniFiAccessUserGroup',
+    'Add-UniFiAccessUserToGroup',
+    'Remove-UniFiAccessUserFromGroup',
+    'Get-UniFiAccessUserGroupMembers',
+    'New-UniFiAccessVisitor',
+    'Get-UniFiAccessVisitor',
+    'Get-UniFiAccessVisitors',
+    'Set-UniFiAccessVisitor',
+    'Remove-UniFiAccessVisitor',
+    'New-UniFiAccessPolicy',
+    'Get-UniFiAccessPolicy',
+    'Get-UniFiAccessPolicies',
+    'Set-UniFiAccessPolicy',
+    'Remove-UniFiAccessPolicy',
+    'Add-UniFiAccessPolicyToUser',
+    'Add-UniFiAccessPolicyToUserGroup',
+    'Get-UniFiAccessUserPolicies',
+    'Get-UniFiAccessUserGroupPolicies',
+    'New-UniFiAccessSchedule',
+    'Get-UniFiAccessSchedule',
+    'Get-UniFiAccessSchedules',
+    'Set-UniFiAccessSchedule',
+    'Remove-UniFiAccessSchedule',
+    'New-UniFiAccessHolidayGroup',
+    'Get-UniFiAccessHolidayGroup',
+    'Get-UniFiAccessHolidayGroups',
+    'Set-UniFiAccessHolidayGroup',
+    'Remove-UniFiAccessHolidayGroup',
+    'New-UniFiAccessPINCode',
+    'Add-UniFiAccessPINToUser',
+    'Remove-UniFiAccessPINFromUser',
+    'Add-UniFiAccessPINToVisitor',
+    'Remove-UniFiAccessPINFromVisitor',
+    'New-UniFiAccessNFCEnrollment',
+    'Get-UniFiAccessNFCEnrollmentStatus',
+    'Remove-UniFiAccessNFCEnrollmentSession',
+    'Get-UniFiAccessNFCCard',
+    'Get-UniFiAccessNFCCards',
+    'Set-UniFiAccessNFCCard',
+    'Remove-UniFiAccessNFCCard',
+    'Add-UniFiAccessNFCCardToUser',
+    'Remove-UniFiAccessNFCCardFromUser',
+    'Add-UniFiAccessNFCCardToVisitor',
+    'Remove-UniFiAccessNFCCardFromVisitor',
+    'Import-UniFiAccessThirdPartyNFCCard',
+    'Get-UniFiAccessTouchPass',
+    'Get-UniFiAccessTouchPasses',
+    'Search-UniFiAccessTouchPass',
+    'Get-UniFiAccessAssignableTouchPasses',
+    'Set-UniFiAccessTouchPass',
+    'Get-UniFiAccessTouchPassDetails',
+    'New-UniFiAccessTouchPassPurchase',
+    'Add-UniFiAccessTouchPassToUser',
+    'Remove-UniFiAccessTouchPassFromUser',
+    'Add-UniFiAccessTouchPassesToUsers',
+    'Add-UniFiAccessLicensePlateToUser',
+    'Remove-UniFiAccessLicensePlateFromUser',
+    'Add-UniFiAccessLicensePlateToVisitor',
+    'Remove-UniFiAccessLicensePlateFromVisitor',
+    'Add-UniFiAccessQRCodeToVisitor',
+    'Remove-UniFiAccessQRCodeFromVisitor',
+    'Get-UniFiAccessQRCodeImage',
+    'Get-UniFiAccessDoor',
+    'Get-UniFiAccessDoors',
+    'Unlock-UniFiAccessDoor',
+    'Set-UniFiAccessDoorTemporaryUnlock',
+    'Get-UniFiAccessDoorLockStatus',
+    'Get-UniFiAccessDoorGroupTopology',
+    'New-UniFiAccessDoorGroup',
+    'Get-UniFiAccessDoorGroup',
+    'Get-UniFiAccessDoorGroups',
+    'Set-UniFiAccessDoorGroup',
+    'Remove-UniFiAccessDoorGroup',
+    'Get-UniFiAccessDevice',
+    'Get-UniFiAccessDevices',
+    'Get-UniFiAccessDeviceAccessMethod',
+    'Set-UniFiAccessDeviceAccessMethod',
+    'Get-UniFiAccessLogs',
+    'New-UniFiAccessWebhook',
+    'Get-UniFiAccessWebhook',
+    'Get-UniFiAccessWebhooks',
+    'Set-UniFiAccessWebhook',
+    'Remove-UniFiAccessWebhook',
+    'Test-UniFiAccessWebhook',
+    'Get-UniFiAccessWebhookEvents'
+)
