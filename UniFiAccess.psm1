@@ -1,12 +1,61 @@
 #Requires -Version 7.0
 
-# Module-level variables
+#region Module-level variables
 $script:UniFiAccessConnection = @{
     BaseUri = $null
     Token = $null
     Headers = $null
     Connected = $false
 }
+
+$errorMessage = @{
+    "CODE_PARAMS_INVALID" = "The provided parameters are invalid."
+    "CODE_SYSTEM_ERROR" = "An error occurred on the server's end."
+    "CODE_RESOURCE_NOT_FOUND" = "The requested resource was not found."
+    "CODE_OPERATION_FORBIDDEN" = "The requested operation is not allowed."
+    "CODE_AUTH_FAILED" = "Authentication failed."
+    "CODE_ACCESS_TOKEN_INVALID" = "The provided access token is invalid."
+    "CODE_UNAUTHORIZED" = "You not are allowed to perform this action."
+    "CODE_NOT_EXISTS" = "The requested item does not exist."
+    "CODE_USER_EMAIL_ERROR" = "The provided email format is invalid."
+    "CODE_USER_ACCOUNT_NOT_EXIST" = "The requested user account does not exist."
+    "CODE_USER_WORKER_NOT_EXISTS" = "The requested user does not exist."
+    "CODE_USER_NAME_DUPLICATED" = "The provided name already exists."
+    "CODE_USER_CSV_IMPORT_INCOMPLETE_PROP" = "Please provide both first name and last name."
+    "CODE_ACCESS_POLICY_USER_TIMEZONE_NOT_FOUND" = "The requested workday schedule could not be found."
+    "CODE_ACCESS_POLICY_HOLIDAY_TIMEZONE_NOT_FOUND" = "The requested holiday schedule could not be found."
+    "CODE_ACCESS_POLICY_HOLIDAY_GROUP_NOT_FOUND" = "The requested holiday group could not be found."
+    "CODE_ACCESS_POLICY_HOLIDAY_NOT_FOUND" = "The requested holiday could not be found."
+    "CODE_ACCESS_POLICY_SCHEDULE_NOT_FOUND" = "The requested schedule could not be found."
+    "CODE_ACCESS_POLICY_HOLIDAY_NAME_EXIST" = "The provided holiday name already exists."
+    "CODE_ACCESS_POLICY_HOLIDAY_GROUP_NAME_EXIST" = "The provided holiday group name already exists."
+    "CODE_ACCESS_POLICY_SCHEDULE_NAME_EXIST" = "The provided schedule name already exists."
+    "CODE_ACCESS_POLICY_SCHEDULE_CAN_NOT_DELETE" = "The schedule could not be deleted."
+    "CODE_ACCESS_POLICY_HOLIDAY_GROUP_CAN_NOT_DELETE" = "The holiday group could not be deleted."
+    "CODE_CREDS_NFC_HAS_BIND_USER" = "The NFC card is already registered and assigned to another user."
+    "CODE_CREDS_DISABLE_TRANSFER_UID_USER_NFC" = "The UniFi Identity Enterprise user's NFC card is not transferrable."
+    "CODE_CREDS_NFC_READ_SESSION_NOT_FOUND" = "Failed to obtain the NFC read session."
+    "CODE_CREDS_NFC_READ_POLL_TOKEN_EMPTY" = "The NFC token is empty."
+    "CODE_CREDS_NFC_CARD_IS_PROVISION" = "The NFC card is already registered at another site."
+    "CODE_CREDS_NFC_CARD_PROVISION_FAILED" = "Please hold the NFC card against the reader for more than 5 seconds."
+    "CODE_CREDS_NFC_CARD_INVALID" = "The card type is not supported. Please use a UA Card."
+    "CODE_CREDS_NFC_CARD_CANNOT_BE_DELETE" = "The NFC card could not be deleted."
+    "CODE_CREDS_PIN_CODE_CREDS_ALREADY_EXIST" = "The PIN code already exists."
+    "CODE_CREDS_PIN_CODE_CREDS_LENGTH_INVALID" = "The PIN code length does not meet the preset requirements."
+    "CODE_SPACE_DEVICE_BOUND_LOCATION_NOT_FOUND" = "The device's location was not found."
+    "CODE_DEVICE_DEVICE_VERSION_NOT_FOUND" = "The firmware version is up to date."
+    "CODE_DEVICE_DEVICE_VERSION_TOO_OLD" = "The firmware version is too old. Please update to the latest version."
+    "CODE_DEVICE_DEVICE_BUSY" = "The camera is currently in use."
+    "CODE_DEVICE_DEVICE_NOT_FOUND" = "The device was not found."
+    "CODE_DEVICE_DEVICE_OFFLINE" = "The device is currently offline."
+    "CODE_OTHERS_UID_ADOPTED_NOT_SUPPORTED" = "The API is not available after upgrading to Identity Enterprise."
+    "CODE_HOLIDAY_GROUP_CAN_NOT_DELETE" = "The holiday group could not be deleted."
+    "CODE_HOLIDAY_GROUP_CAN_NOT_EDIT" = "The holiday group could not be edited."
+    "CODE_DEVICE_WEBHOOK_ENDPOINT_DUPLICATED" = "The provided endpoint already exists."
+    "CODE_DEVICE_API_NOT_SUPPORTED" = "The API is currently not available for this device."
+}
+
+#endregion Module-level variables
 
 #region Helper Functions
 
@@ -82,16 +131,38 @@ function Invoke-UniFiAccessRequest {
         $response = Invoke-RestMethod @requestParams
         
         # Check for API-level errors
-        if ($response.code -and $response.code -ne 'SUCCESS') {
-            throw "API Error: [$($response.code)] $($response.msg)"
+        if ($response.code -and $response.code -eq 'SUCCESS') {
+        
+            $response = [PSCustomObject]@{
+            api_status = "SUCCESS"
+#            api_result = 'SUCCESS'
+            api_returnCode = if ($response.code) { $response.code } else { 'SUCCESS' }
+            api_returnData = if ($response.data) { $response.data } else { $null }
+            api_returnMessage = if ($response.message) { $response.message } else { $null }
+        }  
+        }
+        elseif ($response.code -and $response.code -ne 'SUCCESS') {
+            $response = [PSCustomObject]@{
+                api_status = 'SUCCESS'
+ #               api_result = 'ERROR'
+                api_returnCode = $response.code
+                api_returnData = ""
+                api_returnMessage = if ($errorMessage.ContainsKey($response.code)) { $errorMessage[$response.code] } else { $response.msg }
+            }
         }
         
-        return $response
     }
     catch {
-        Write-Error "API Request Failed: $_"
-        throw
+        $response = [PSCustomObject]@{
+            api_status = 'ERROR'
+ #           api_result = $null
+            api_returnCode = $null
+            api_returnData = $null
+            api_returnMessage = $null
+        }
     }
+
+    return $response
 }
 
 <#
@@ -272,12 +343,15 @@ function Get-UniFiAccessConnection {
     
 .PARAMETER Email
     User's email address
-    
+
+.PARAMETER OnboardTime
+    The time the user was onboarded/start date (datetime).
+
 .PARAMETER EmployeeNumber
     Optional employee number
-    
-.PARAMETER Status
-    User status (default: ACTIVE)
+
+.PARAMETER AdditionalProperties
+    Hashtable of additional properties to include in the user creation request. - This is here for future use cases where new properties may be added to the API.
     
 .EXAMPLE
     New-UniFiAccessUser -FirstName "John" -LastName "Doe" -Email "john.doe@example.com"
@@ -295,11 +369,10 @@ function New-UniFiAccessUser {
         [string]$Email,
         
         [Parameter()]
-        [string]$EmployeeNumber,
-        
+        [datetime]$onboardTime,
+
         [Parameter()]
-        [ValidateSet('ACTIVE', 'INACTIVE')]
-        [string]$Status = 'ACTIVE',
+        [string]$EmployeeNumber,
         
         [Parameter()]
         [hashtable]$AdditionalProperties
@@ -308,19 +381,20 @@ function New-UniFiAccessUser {
     $body = @{
         first_name = $FirstName
         last_name = $LastName
-        status = $Status
     }
     
     if ($Email) { $body.email = $Email }
     if ($EmployeeNumber) { $body.employee_number = $EmployeeNumber }
+    if ($onboardTime) { $body.onboard_time = [int][double]::Parse((Get-Date ($onboardTime).ToUniversalTime() -UFormat %s)) }
+    
     if ($AdditionalProperties) {
         foreach ($key in $AdditionalProperties.Keys) {
             $body[$key] = $AdditionalProperties[$key]
         }
     }
     
-    $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/user' -Body $body
-    return $response.data
+    $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/users' -Body $body
+    return $response
 }
 
 <#
@@ -332,22 +406,36 @@ function New-UniFiAccessUser {
     
 .PARAMETER UserId
     The unique identifier of the user
+
+.PARAMETER Expand
+    Include expanded user details in the response (curently access policies)
     
 .EXAMPLE
     Get-UniFiAccessUser -UserId "user-123"
+    Gets the full details of the specified user
+
+.EXAMPLE
+    Get-UniFiAccessUser  -UserId "user-123" -Expand
+    Gets the full details of the specified user including expanded details (curently access policies)
 #>
 function Get-UniFiAccessUser {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
         [Alias('Id')]
-        [string]$UserId
+        [string]$UserId,
+        
+        [switch]$Expand
     )
     
-    process {
-        $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/users/$UserId"
-        return $response.data
+    $queryParams = @{}
+    if ($Expand) {
+        $queryParams.'expand[]' = 'access_policy'
     }
+
+    $queryString = Get-QueryString -Parameters $queryParams
+    $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/users/$UserId$queryString"
+    return $response
 }
 
 <#
@@ -364,7 +452,7 @@ function Get-UniFiAccessUser {
     Number of results per page. Must be used with PageNum. Default is 25.
     
 .PARAMETER Expand
-    Include expanded user details in the response
+    Include expanded user details in the response (curently access policies)
     
 .EXAMPLE
     Get-UniFiAccessUsers
@@ -413,7 +501,7 @@ function Get-UniFiAccessUsers {
 
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/users$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -434,6 +522,9 @@ function Get-UniFiAccessUsers {
     
 .PARAMETER Email
     User's email address
+
+.PARAMETER OnboardTime
+    The time the user was onboarded/start date (datetime).
     
 .PARAMETER Status
     User status
@@ -456,12 +547,15 @@ function Set-UniFiAccessUser {
         
         [Parameter()]
         [string]$Email,
+
+        [Parameter()]
+        [datetime]$onboardTime,
         
         [Parameter()]
         [string]$EmployeeNumber,
         
         [Parameter()]
-        [ValidateSet('ACTIVE', 'INACTIVE')]
+        [ValidateSet('ACTIVE', 'DEACTIVATED')]
         [string]$Status
     )
     
@@ -471,11 +565,12 @@ function Set-UniFiAccessUser {
         if ($FirstName) { $body.first_name = $FirstName }
         if ($LastName) { $body.last_name = $LastName }
         if ($Email) { $body.email = $Email }
+        if ($onboardTime) { $body.onboard_time = [int][double]::Parse((Get-Date ($onboardTime).ToUniversalTime() -UFormat %s)) }
         if ($EmployeeNumber) { $body.employee_number = $EmployeeNumber }
         if ($Status) { $body.status = $Status }
         
         $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/users/$UserId" -Body $body
-        return $response.data
+        return $response
     }
 }
 
@@ -509,7 +604,7 @@ function Remove-UniFiAccessUser {
     process {
         if ($Force -or $PSCmdlet.ShouldProcess($UserId, 'Delete user')) {
             $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId"
-            return $response.data
+            return $response
         }
     }
 }
@@ -547,7 +642,7 @@ function Search-UniFiAccessUser {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/users/search$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -618,7 +713,7 @@ function New-UniFiAccessUserGroup {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/user_group' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -641,7 +736,7 @@ function Get-UniFiAccessUserGroup {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/user_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -657,7 +752,7 @@ function Get-UniFiAccessUserGroups {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/user_group'
-    return $response.data
+    return $response
 }
 
 <#
@@ -688,7 +783,7 @@ function Set-UniFiAccessUserGroup {
     }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/user_group/$GroupId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -713,7 +808,7 @@ function Remove-UniFiAccessUserGroup {
     
     if ($Force -or $PSCmdlet.ShouldProcess($GroupId, 'Delete user group')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/user_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -745,7 +840,7 @@ function Add-UniFiAccessUserToGroup {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/user_group/$GroupId/user" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -772,7 +867,7 @@ function Remove-UniFiAccessUserFromGroup {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/user_group/$GroupId/users/$UserId"
-    return $response.data
+    return $response
 }
 
 <#
@@ -810,7 +905,7 @@ function Get-UniFiAccessUserGroupMembers {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/user_group/$GroupId/user$queryString"
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -898,7 +993,7 @@ function New-UniFiAccessVisitor {
     if ($PhoneNumber) { $body.phone = $PhoneNumber }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/visitor' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -921,7 +1016,7 @@ function Get-UniFiAccessVisitor {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/visitor/$VisitorId"
-        return $response.data
+        return $response
     }
 }
 
@@ -954,7 +1049,7 @@ function Get-UniFiAccessVisitors {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/visitor$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1001,7 +1096,7 @@ function Set-UniFiAccessVisitor {
         if ($Status) { $body.status = $Status }
         
         $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/visitor/$VisitorId" -Body $body
-        return $response.data
+        return $response
     }
 }
 
@@ -1029,7 +1124,7 @@ function Remove-UniFiAccessVisitor {
     process {
         if ($Force -or $PSCmdlet.ShouldProcess($VisitorId, 'Delete visitor')) {
             $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/visitor/$VisitorId"
-            return $response.data
+            return $response
         }
     }
 }
@@ -1077,7 +1172,7 @@ function New-UniFiAccessPolicy {
     if ($ScheduleId) { $body.schedule_id = $ScheduleId }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/access_policy' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1100,7 +1195,7 @@ function Get-UniFiAccessPolicy {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/access_policy/$PolicyId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1116,7 +1211,7 @@ function Get-UniFiAccessPolicies {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/access_policy'
-    return $response.data
+    return $response
 }
 
 <#
@@ -1155,7 +1250,7 @@ function Set-UniFiAccessPolicy {
     if ($ScheduleId) { $body.schedule_id = $ScheduleId }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/access_policy/$PolicyId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1180,7 +1275,7 @@ function Remove-UniFiAccessPolicy {
     
     if ($Force -or $PSCmdlet.ShouldProcess($PolicyId, 'Delete access policy')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/access_policy/$PolicyId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1212,7 +1307,7 @@ function Add-UniFiAccessPolicyToUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/users/$UserId/access_policy" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1243,7 +1338,7 @@ function Add-UniFiAccessPolicyToUserGroup {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/user_group/$GroupId/access_policy" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1264,7 +1359,7 @@ function Get-UniFiAccessUserPolicies {
     )
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/users/$UserId/access_policy"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1285,7 +1380,7 @@ function Get-UniFiAccessUserGroupPolicies {
     )
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/user_group/$GroupId/access_policy"
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -1326,7 +1421,7 @@ function New-UniFiAccessSchedule {
     if ($TimeRanges) { $body.time_ranges = $TimeRanges }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/schedule' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1349,7 +1444,7 @@ function Get-UniFiAccessSchedule {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/schedule/$ScheduleId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1365,7 +1460,7 @@ function Get-UniFiAccessSchedules {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/schedule'
-    return $response.data
+    return $response
 }
 
 <#
@@ -1400,7 +1495,7 @@ function Set-UniFiAccessSchedule {
     if ($TimeRanges) { $body.time_ranges = $TimeRanges }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/schedule/$ScheduleId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1425,7 +1520,7 @@ function Remove-UniFiAccessSchedule {
     
     if ($Force -or $PSCmdlet.ShouldProcess($ScheduleId, 'Delete schedule')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/schedule/$ScheduleId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1463,7 +1558,7 @@ function New-UniFiAccessHolidayGroup {
     if ($Holidays) { $body.holidays = $Holidays }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/holiday_group' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1486,7 +1581,7 @@ function Get-UniFiAccessHolidayGroup {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/holiday_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1502,7 +1597,7 @@ function Get-UniFiAccessHolidayGroups {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/holiday_group'
-    return $response.data
+    return $response
 }
 
 <#
@@ -1537,7 +1632,7 @@ function Set-UniFiAccessHolidayGroup {
     if ($Holidays) { $body.holidays = $Holidays }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/holiday_group/$GroupId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1562,7 +1657,7 @@ function Remove-UniFiAccessHolidayGroup {
     
     if ($Force -or $PSCmdlet.ShouldProcess($GroupId, 'Delete holiday group')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/holiday_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1586,7 +1681,7 @@ function New-UniFiAccessPINCode {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/credential/pin/generate'
-    return $response.data
+    return $response
 }
 
 <#
@@ -1617,7 +1712,7 @@ function Add-UniFiAccessPINToUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/users/$UserId/credential/pin" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1638,7 +1733,7 @@ function Remove-UniFiAccessPINFromUser {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId/credential/pin"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1669,7 +1764,7 @@ function Add-UniFiAccessPINToVisitor {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/visitor/$VisitorId/credential/pin" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1690,7 +1785,7 @@ function Remove-UniFiAccessPINFromVisitor {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/visitor/$VisitorId/credential/pin"
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -1722,7 +1817,7 @@ function New-UniFiAccessNFCEnrollment {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/credential/nfc_card/enroll' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1743,7 +1838,7 @@ function Get-UniFiAccessNFCEnrollmentStatus {
     )
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/nfc_card/enroll/$SessionId"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1764,7 +1859,7 @@ function Remove-UniFiAccessNFCEnrollmentSession {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/credential/nfc_card/enroll/$SessionId"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1787,7 +1882,7 @@ function Get-UniFiAccessNFCCard {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/nfc_card/$CardId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1820,7 +1915,7 @@ function Get-UniFiAccessNFCCards {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/nfc_card$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1850,7 +1945,7 @@ function Set-UniFiAccessNFCCard {
     if ($Name) { $body.name = $Name }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/credential/nfc_card/$CardId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1875,7 +1970,7 @@ function Remove-UniFiAccessNFCCard {
     
     if ($Force -or $PSCmdlet.ShouldProcess($CardId, 'Delete NFC card')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/credential/nfc_card/$CardId"
-        return $response.data
+        return $response
     }
 }
 
@@ -1907,7 +2002,7 @@ function Add-UniFiAccessNFCCardToUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/users/$UserId/credential/nfc_card" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1928,7 +2023,7 @@ function Remove-UniFiAccessNFCCardFromUser {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId/credential/nfc_card"
-    return $response.data
+    return $response
 }
 
 <#
@@ -1959,7 +2054,7 @@ function Add-UniFiAccessNFCCardToVisitor {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/visitor/$VisitorId/credential/nfc_card" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -1980,7 +2075,7 @@ function Remove-UniFiAccessNFCCardFromVisitor {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/visitor/$VisitorId/credential/nfc_card"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2005,7 +2100,7 @@ function Import-UniFiAccessThirdPartyNFCCard {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/credential/nfc_card/import' -Body $body
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -2035,7 +2130,7 @@ function Get-UniFiAccessTouchPass {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/touchpass$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2050,7 +2145,7 @@ function Get-UniFiAccessTouchPasses {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/credential/touchpass'
-    return $response.data
+    return $response
 }
 
 <#
@@ -2073,7 +2168,7 @@ function Search-UniFiAccessTouchPass {
     $queryParams = @{ query = $Query }
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/touchpass/search$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2088,7 +2183,7 @@ function Get-UniFiAccessAssignableTouchPasses {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/credential/touchpass/assignable'
-    return $response.data
+    return $response
 }
 
 <#
@@ -2118,7 +2213,7 @@ function Set-UniFiAccessTouchPass {
     if ($Name) { $body.name = $Name }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/credential/touchpass/$TouchPassId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2139,7 +2234,7 @@ function Get-UniFiAccessTouchPassDetails {
     )
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/credential/touchpass/$TouchPassId"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2164,7 +2259,7 @@ function New-UniFiAccessTouchPassPurchase {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/credential/touchpass/purchase' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2195,7 +2290,7 @@ function Add-UniFiAccessTouchPassToUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/users/$UserId/credential/touchpass" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2216,7 +2311,7 @@ function Remove-UniFiAccessTouchPassFromUser {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId/credential/touchpass"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2241,7 +2336,7 @@ function Add-UniFiAccessTouchPassesToUsers {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/users/credential/touchpass/batch' -Body $body
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -2276,7 +2371,7 @@ function Add-UniFiAccessLicensePlateToUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/users/$UserId/credential/license_plate" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2307,7 +2402,7 @@ function Remove-UniFiAccessLicensePlateFromUser {
     }
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/users/$UserId/credential/license_plate" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2338,7 +2433,7 @@ function Add-UniFiAccessLicensePlateToVisitor {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/visitor/$VisitorId/credential/license_plate" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2369,7 +2464,7 @@ function Remove-UniFiAccessLicensePlateFromVisitor {
     }
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/visitor/$VisitorId/credential/license_plate" -Body $body
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -2394,7 +2489,7 @@ function Add-UniFiAccessQRCodeToVisitor {
     )
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/visitor/$VisitorId/credential/qr_code"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2415,7 +2510,7 @@ function Remove-UniFiAccessQRCodeFromVisitor {
     )
     
     $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/visitor/$VisitorId/credential/qr_code"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2470,7 +2565,7 @@ function Get-UniFiAccessDoor {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/door/$DoorId"
-        return $response.data
+        return $response
     }
 }
 
@@ -2503,7 +2598,7 @@ function Get-UniFiAccessDoors {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/door$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2563,7 +2658,7 @@ function Unlock-UniFiAccessDoor {
             $response = Invoke-UniFiAccessRequest -Method POST -Endpoint $endpoint -Body $body
         }
         
-        return $response.data
+        return $response
     }
 }
 
@@ -2598,7 +2693,7 @@ function Set-UniFiAccessDoorTemporaryUnlock {
     }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/door/$DoorId/temporary_unlock" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2621,7 +2716,7 @@ function Get-UniFiAccessDoorLockStatus {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/door/$DoorId/lock_status"
-        return $response.data
+        return $response
     }
 }
 
@@ -2644,7 +2739,7 @@ function Get-UniFiAccessDoorGroupTopology {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/door_group/topology'
-    return $response.data
+    return $response
 }
 
 <#
@@ -2684,7 +2779,7 @@ function New-UniFiAccessDoorGroup {
     if ($DoorIds) { $body.door_ids = $DoorIds }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/door_group' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2707,7 +2802,7 @@ function Get-UniFiAccessDoorGroup {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/door_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -2723,7 +2818,7 @@ function Get-UniFiAccessDoorGroups {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/door_group'
-    return $response.data
+    return $response
 }
 
 <#
@@ -2761,7 +2856,7 @@ function Set-UniFiAccessDoorGroup {
     if ($DoorIds) { $body.door_ids = $DoorIds }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/door_group/$GroupId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -2786,7 +2881,7 @@ function Remove-UniFiAccessDoorGroup {
     
     if ($Force -or $PSCmdlet.ShouldProcess($GroupId, 'Delete door group')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/door_group/$GroupId"
-        return $response.data
+        return $response
     }
 }
 
@@ -2813,7 +2908,7 @@ function Get-UniFiAccessDevice {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/device/$DeviceId"
-        return $response.data
+        return $response
     }
 }
 
@@ -2846,7 +2941,7 @@ function Get-UniFiAccessDevices {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/device$queryString"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2867,7 +2962,7 @@ function Get-UniFiAccessDeviceAccessMethod {
     )
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/device/$DeviceId/access_method"
-    return $response.data
+    return $response
 }
 
 <#
@@ -2894,7 +2989,7 @@ function Set-UniFiAccessDeviceAccessMethod {
     )
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/device/$DeviceId/access_method" -Body $AccessMethods
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -2966,7 +3061,7 @@ function Get-UniFiAccessLogs {
     
     $queryString = Get-QueryString -Parameters $queryParams
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/log$queryString"
-    return $response.data
+    return $response
 }
 
 #endregion
@@ -3030,7 +3125,7 @@ function New-UniFiAccessWebhook {
     if ($CustomHeaders) { $body.custom_headers = $CustomHeaders }
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint '/webhook' -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -3053,7 +3148,7 @@ function Get-UniFiAccessWebhook {
     
     process {
         $response = Invoke-UniFiAccessRequest -Method GET -Endpoint "/webhook/$WebhookId"
-        return $response.data
+        return $response
     }
 }
 
@@ -3069,7 +3164,7 @@ function Get-UniFiAccessWebhooks {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/webhook'
-    return $response.data
+    return $response
 }
 
 <#
@@ -3128,7 +3223,7 @@ function Set-UniFiAccessWebhook {
     if ($CustomHeaders) { $body.custom_headers = $CustomHeaders }
     
     $response = Invoke-UniFiAccessRequest -Method PUT -Endpoint "/webhook/$WebhookId" -Body $body
-    return $response.data
+    return $response
 }
 
 <#
@@ -3153,7 +3248,7 @@ function Remove-UniFiAccessWebhook {
     
     if ($Force -or $PSCmdlet.ShouldProcess($WebhookId, 'Delete webhook')) {
         $response = Invoke-UniFiAccessRequest -Method DELETE -Endpoint "/webhook/$WebhookId"
-        return $response.data
+        return $response
     }
 }
 
@@ -3178,7 +3273,7 @@ function Test-UniFiAccessWebhook {
     )
     
     $response = Invoke-UniFiAccessRequest -Method POST -Endpoint "/webhook/$WebhookId/test"
-    return $response.data
+    return $response
 }
 
 <#
@@ -3196,7 +3291,7 @@ function Get-UniFiAccessWebhookEvents {
     param()
     
     $response = Invoke-UniFiAccessRequest -Method GET -Endpoint '/webhook/events'
-    return $response.data
+    return $response
 }
 
 #endregion
