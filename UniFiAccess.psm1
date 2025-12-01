@@ -671,6 +671,9 @@ function Search-UniFiAccessUser {
         [int]$Limit
     )
     
+
+    #Need to work out how this functions on the UniFi end as its not documented well
+
     $queryParams = @{
         query = $Query
     }
